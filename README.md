@@ -1,172 +1,255 @@
-# Ticketr — Customer Support Ticketing App
 
-A support ticketing system: customers raise tickets with a priority, tickets are auto-routed to
-the right department and agent, and closing a ticket is gated behind a checkpoint — only the
-agent the ticket is assigned to can close it, and only after they've marked it resolved.
+# Ticketr – Customer Support Ticketing System
 
-## Stack
+A full-stack customer support ticketing application built with **Java, Spring Boot, React, and PostgreSQL**. Ticketr streamlines customer issue management through automated ticket assignment, department-based routing, role-based access control, and a structured ticket lifecycle.
 
-- **Backend**: Spring Boot 4 (Java 21), Spring Security + JWT, Spring Data JPA, PostgreSQL — `CustomerService/`
-- **Frontend**: React 19 + TypeScript, Vite, MUI, React Router — `frontend/`
+## Key Features
 
-## The ticket lifecycle (the checkpoint)
+- **Role-Based Access Control:** Separate permissions and dashboards for Admins, Agents, and Customers.
+- **Automated Ticket Assignment:** Routes tickets to the appropriate department and assigns them to the active agent with the fewest open tickets.
+- **Ticket Lifecycle Management:** Structured workflow from ticket creation to closure, including customer-driven reopening.
+- **Priority-Based SLA:** Different resolution targets based on ticket priority.
+- **Audit History:** Maintains a history of ticket status changes.
+- **JWT Authentication:** Secures API endpoints using JSON Web Tokens.
+- **Mandatory Resolution Checkpoint:** Only the agent assigned to a ticket can close it, and only after resolving it.
 
+## Technology Stack
+
+| Layer | Technologies |
+|---|---|
+| Backend | Java 21, Spring Boot 4 |
+| Security | Spring Security, JWT |
+| Database | PostgreSQL |
+| ORM | Spring Data JPA, Hibernate |
+| Frontend | React 19, TypeScript |
+| UI | Material UI (MUI) |
+| Routing | React Router |
+| HTTP Client | Axios |
+| Build Tools | Maven, Vite |
+| Code Quality | Oxlint |
+
+## Application Architecture
+
+The application follows a client-server architecture.
+
+- **Frontend:** React application responsible for the user interface and API communication.
+- **Backend:** Spring Boot REST APIs responsible for business logic, authentication, authorization, ticket assignment, and lifecycle validation.
+- **Database:** PostgreSQL stores users, departments, tickets, and ticket event history.
+
+## Ticket Lifecycle
+
+```text
+             Customer Creates Ticket
+                       |
+                       v
+                      OPEN
+                       |
+             Automated Assignment
+                       |
+                       v
+                    ASSIGNED
+                       |
+               Agent Starts Work
+                       |
+                       v
+                  IN_PROGRESS
+                       |
+                 Agent Resolves
+                       |
+                       v
+                   RESOLVED
+                       |
+             +---------+---------+
+             |                   |
+       Customer Accepts    Customer Reopens
+             |                   |
+             v                   v
+           CLOSED             REOPENED
+                                 |
+                         Assigned Agent
+                           Continues Work
+                                 |
+                                 v
+                              RESOLVED
 ```
-OPEN --(auto-routed)--> ASSIGNED --(agent starts)--> IN_PROGRESS --(agent resolves)--> RESOLVED --(agent closes)--> CLOSED
-                                                            ^                              |
-                                                            |                              v
-                                                            +---------- REOPENED <---- (customer reopens)
+
+### Mandatory Closure Rule
+
+Ticket closure is enforced by the backend:
+
+- Only the agent assigned to the ticket can close it.
+- A ticket must be in `RESOLVED` status before it can be closed.
+- Customers, other agents, and administrators cannot close tickets.
+- The frontend displays the Close Ticket action only when the backend confirms that the current user is authorized.
+
+This ensures that ticket closure follows a controlled and validated workflow.
+
+## Automated Ticket Routing
+
+When a customer creates a ticket:
+
+1. The issue type determines the appropriate department.
+2. The system identifies active agents in that department.
+3. It checks the number of open tickets assigned to each agent.
+4. The ticket is assigned to the agent with the fewest open tickets.
+
+### Supported Departments
+
+- Billing
+- Technical Support
+- Account & Access
+- General Inquiries
+
+## Priority-Based SLA
+
+| Priority | Resolution Target |
+|---|---|
+| Critical | 4 hours |
+| High | 24 hours |
+| Medium | 72 hours |
+| Low | 120 hours |
+
+## User Roles
+
+| Role | Responsibilities |
+|---|---|
+| Admin | View and manage tickets across the application |
+| Agent | View assigned tickets, start work, resolve, and close tickets |
+| Customer | Create tickets, track progress, and reopen resolved tickets |
+
+## REST API Overview
+
+**Base URL:** `http://localhost:8080`
+
+### Authentication
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/auth/register` | Register a new customer |
+| POST | `/api/auth/login` | Authenticate and obtain JWT |
+
+### Departments
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/departments` | Retrieve available departments |
+
+### Tickets
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/tickets` | Create a ticket with automated assignment |
+| GET | `/api/tickets` | Retrieve tickets based on user role |
+| GET | `/api/tickets/{id}` | Retrieve ticket details |
+| GET | `/api/tickets/{id}/events` | Retrieve ticket audit history |
+| PATCH | `/api/tickets/{id}/start` | Start an assigned ticket |
+| PATCH | `/api/tickets/{id}/resolve` | Resolve a ticket |
+| PATCH | `/api/tickets/{id}/close` | Close a resolved ticket |
+| PATCH | `/api/tickets/{id}/reopen` | Reopen a resolved ticket |
+
+All ticket operations enforce authentication, authorization, and valid lifecycle transitions at the backend.
+
+## Project Setup
+
+### Prerequisites
+
+Install the following before running the application:
+
+- Java 21
+- PostgreSQL
+- Node.js and npm
+- Git
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Sri-Sakthi-CB/Ticketr.git
+cd Ticketr
 ```
 
-- **Routing**: on creation, the issue type picks the department (Billing / Technical Support /
-  Account & Access / General Inquiries), and the ticket is assigned to whichever active agent in
-  that department currently has the fewest open tickets. Priority sets the SLA due date
-  (Critical: 4h, High: 24h, Medium: 72h, Low: 120h).
-- **The checkpoint**: `RESOLVED -> CLOSED` is the one transition that isn't a plain status edit.
-  It is enforced server-side in `TicketService.close()` — the caller must be the ticket's
-  `assignedAgent`, and the ticket must currently be `RESOLVED`. No one else (not the customer, not
-  another agent, not an admin) can close a ticket, and the API rejects the attempt with 403/409 if
-  they try. The frontend also only renders the "Close Ticket" button when the backend says
-  `canClose: true` for the logged-in user, so this isn't just a client-side convention.
-- Customers can reopen a `RESOLVED` ticket they own if they're not satisfied, which sends it back
-  to the same assigned agent.
+### 2. Configure PostgreSQL
 
-## Running it
+Create the database and user:
 
-### 1. Database
-
-Pick one:
-
-**Docker** (not installed on this machine as of writing, but the compose file is ready):
-```
-docker compose up -d
-```
-This starts Postgres on `localhost:5432` with db/user/password all `ticketing`.
-
-**Local PostgreSQL** (you already have PostgreSQL 17 running as a Windows service): connect with
-your own superuser credentials and run:
 ```sql
 CREATE USER ticketing WITH PASSWORD 'ticketing';
 CREATE DATABASE ticketing OWNER ticketing;
 ```
 
-Either way, `CustomerService/src/main/resources/application.properties` already points at
-`jdbc:postgresql://localhost:5432/ticketing` / `ticketing` / `ticketing`. Change it there (or via
-env vars) if you'd rather use different credentials.
+The default local database configuration is available in the backend's `application.properties`.
 
-### 2. Backend
+For deployment, configure database credentials through environment variables instead of using default credentials.
 
-```
+### 3. Start the Backend
+
+Navigate to the backend directory:
+
+```bash
 cd CustomerService
+```
+
+**Windows:**
+
+```bash
+mvnw.cmd spring-boot:run
+```
+
+**Linux/macOS:**
+
+```bash
 ./mvnw spring-boot:run
 ```
-Runs on `http://localhost:8080`. On first boot it seeds departments, routing rules, and demo
-accounts (all password `password123`):
 
-| Role   | Email                          | Department          |
-|--------|--------------------------------|----------------------|
-| Admin  | admin@demo.com                 | —                    |
-| Agent  | agent.billing@demo.com         | Billing              |
-| Agent  | agent.technical1@demo.com      | Technical Support    |
-| Agent  | agent.technical2@demo.com      | Technical Support    |
-| Agent  | agent.account@demo.com         | Account & Access     |
-| Agent  | agent.general@demo.com         | General Inquiries    |
-| Customer | customer@demo.com             | —                    |
+Backend URL: `http://localhost:8080`
 
-New customers can also self-register from the login page.
+### 4. Start the Frontend
 
-### 3. Frontend
+Open another terminal from the repository root:
 
-```
-cd frontend
+```bash
 npm install
 npm run dev
 ```
-Runs on `http://localhost:5173` and proxies `/api` to the backend.
 
-## API summary
+Frontend URL: `http://localhost:5173`
 
-| Method | Path                     | Who                    | What |
-|--------|--------------------------|------------------------|------|
-| POST   | /api/auth/register       | anyone                 | Create a customer account |
-| POST   | /api/auth/login          | anyone                 | Get a JWT |
-| GET    | /api/departments         | any authenticated user | List departments |
-| POST   | /api/tickets             | customer               | Raise a ticket (auto-routed & assigned) |
-| GET    | /api/tickets             | any                     | List tickets (own / assigned / all, by role) |
-| GET    | /api/tickets/{id}        | owner / assigned agent / admin | Ticket detail |
-| GET    | /api/tickets/{id}/events | same as above           | Status-change audit trail |
-| PATCH  | /api/tickets/{id}/start  | assigned agent          | ASSIGNED -> IN_PROGRESS |
-| PATCH  | /api/tickets/{id}/resolve| assigned agent          | IN_PROGRESS/REOPENED -> RESOLVED |
-| PATCH  | /api/tickets/{id}/close  | **assigned agent only** | RESOLVED -> CLOSED (the checkpoint) |
-| PATCH  | /api/tickets/{id}/reopen | owning customer         | RESOLVED -> REOPENED |
+## Demo Accounts
 
-## Deploying to Render (get a public URL)
+The application includes seeded demo accounts for testing different roles.
 
-The repo is already prepped for this: `CustomerService/Dockerfile` builds the backend, and
-`render.yaml` describes all three pieces (backend, static frontend, Postgres) as a Render
-Blueprint. Local git is initialized and the first commit is made; push it to GitHub yourself,
-then:
+| Role | Email |
+|---|---|
+| Admin | admin@demo.com |
+| Billing Agent | agent.billing@demo.com |
+| Technical Agent 1 | agent.technical1@demo.com |
+| Technical Agent 2 | agent.technical2@demo.com |
+| Account Agent | agent.account@demo.com |
+| General Inquiries Agent | agent.general@demo.com |
+| Customer | customer@demo.com |
 
-### 1. Push to GitHub
+**Password for all demo accounts:** `password123`
 
-Create an empty repo on github.com (public or private — either works with Render), then:
-```
-git remote add origin <your-repo-url>
-git branch -M main
-git push -u origin main
-```
+New customers can also register through the application.
 
-### 2. Deploy via Blueprint (try this first)
+## Security Considerations
 
-1. Sign up / log in at render.com and connect your GitHub account.
-2. **New +** → **Blueprint** → pick this repo. Render reads `render.yaml` and proposes a
-   Postgres database, a `ticketr-backend` web service (Docker), and a `ticketr-frontend`
-   static site.
-3. Click **Apply**. `JWT_SECRET` is auto-generated; the datasource env vars are wired to the
-   database automatically.
-4. Render's Blueprint schema changes over time — if it rejects a field, use the manual steps
-   below instead (they're more resilient to UI changes).
+- JWT-based authentication for protected APIs.
+- Role-based authorization for application operations.
+- Backend validation of ticket ownership and assigned-agent permissions.
+- Server-side enforcement of ticket lifecycle transitions.
+- Sensitive configuration such as JWT secrets and database credentials should be supplied through environment variables in production.
 
-### 3. Manual fallback, if the Blueprint doesn't apply cleanly
+## Future Enhancements
 
-1. **New +** → **PostgreSQL** → name it `ticketr-db`, free plan. Once it's up, note the
-   **Host**, **Port**, **Database**, **Username**, **Password** shown on its page.
-2. **New +** → **Web Service** → connect the repo → set **Root Directory** to `CustomerService`
-   and **Runtime** to Docker (it'll pick up the `Dockerfile`). Free plan. Add environment
-   variables:
-   - `PGHOST`, `PGPORT`, `PGDATABASE`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`
-     — from the database page in step 1
-   - `JWT_SECRET` — any long random string
-   - `CORS_ALLOWED_ORIGINS` — the frontend URL from step 3 (you'll fill this in after creating it)
+- Email notifications for ticket updates.
+- SLA breach notifications and escalation workflows.
+- Advanced ticket filtering and search.
+- Dashboard analytics and reporting.
+- Unit and integration test coverage.
+- Production database migration management using Flyway or Liquibase.
 
-   Deploy, then copy the resulting URL (e.g. `https://ticketr-backend-xxxx.onrender.com`).
-3. **New +** → **Static Site** → connect the repo → **Root Directory** `frontend`, **Build
-   Command** `npm install && npm run build`, **Publish Directory** `dist`. Add environment
-   variable `VITE_API_BASE_URL` = `<backend URL from step 2>/api`. Under **Redirects/Rewrites**,
-   add a rule: source `/*` → destination `/index.html` → type Rewrite (needed for client-side
-   routing). Deploy, then copy this URL too.
-4. Go back to the backend service's environment variables and set `CORS_ALLOWED_ORIGINS` to the
-   frontend's actual URL, then trigger a redeploy of the backend.
+## Author
 
-### Things worth knowing about the free tier
+**Sri Sakthi**
 
-- The free web service **sleeps after 15 minutes idle** and takes several seconds to wake on the
-  next request — expect a slow first load when you share the link.
-- Render's free Postgres plan **expires after a set period** (historically ~30–90 days,
-  double-check current terms in the Render dashboard) — fine for a demo, not for anything
-  long-lived. Upgrade the database plan before that matters.
-- `VITE_API_BASE_URL` is baked into the frontend at build time. If the backend's actual URL ends
-  up different from what you expected (Render appends a random suffix if the name is taken), update
-  the env var and manually redeploy the static site.
-- Rotate `JWT_SECRET` to something you generate yourself, not the demo value committed in
-  `application.properties` (that value only takes effect if you *don't* set the env var).
-
-## Notes / things you may want to change later
-
-- Departments and routing rules are a fixed starter set seeded by `DataSeeder`, per your choice of
-  "fixed starter set" over an admin-managed one. To add a department or change routing, edit the
-  seeder (or add an admin UI later).
-- `spring.jpa.hibernate.ddl-auto=update` is used for simplicity; swap in Flyway/Liquibase
-  migrations before this goes anywhere near production data.
-- The JWT secret in `application.properties` is a demo default — override `JWT_SECRET` for any
-  real deployment.
+GitHub: [Sri-Sakthi-CB](https://github.com/Sri-Sakthi-CB)
